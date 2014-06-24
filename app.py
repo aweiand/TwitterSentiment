@@ -12,6 +12,7 @@ import csv
 import nltk
 from nltk.classify.naivebayes import NaiveBayesClassifier
 from nltk.corpus import stopwords
+from sklearn import cross_validation
 
 def getUniqueItems(iterable):
     result = []
@@ -70,7 +71,7 @@ def print_status(tipo):
     qtd = int(raw_input('\nDigite quantos resultados voce quer ver: '))
     print("\n--------\n Top %d - Tweets %s:" % (qtd, tipo.upper()))
 
-    for tweet in test_tweets:
+    for tweet in in_tweets:
         if qtd == 0:
             break
 
@@ -83,7 +84,8 @@ def print_status(tipo):
 
 # read in training tweets
 print("Lendo tweets de treino...\n")
-in_tweets = read_tweets('./GetTwitterCorpus/full-corpus-2col-2class.csv')
+in_tweets       = read_tweets('./GetTwitterCorpus/full-corpus-2col-2class.csv')
+number_cross    = round(len(in_tweets) * 0.10)
 
 # filter away words form the training data
 print("Removendo palavras com menos de 3 letras dos tweets de treino...\n")
@@ -106,36 +108,34 @@ word_features = get_word_features(get_words_in_tweets(tweets))
 # get the training set and train the Naive Bayes Classifier
 print("Aplicando o treino com o Naive Bayes Classifier (by NLTK)...\n")
 training_set = nltk.classify.util.apply_features(extract_features, tweets)
-classifier = NaiveBayesClassifier.train(training_set)
+cv = cross_validation.KFold(len(training_set), n_folds=number_cross, indices=True, shuffle=False, random_state=None, k=None)
 
-# read in the test tweets and check accuracy
-# to add your own test tweets, add them in the respective files
-print("Realizando teste com tweets de teste.\n")
-test_tweets = read_tweets('./GetTwitterCorpus/test-corpus.csv')
-total = accuracy = len(test_tweets)
-
+totalaccuracy = 0
 test = { 'positive': 0, 'negative': 0, 'totpos': 0, 'totneg': 0 }
-for tweet in test_tweets:
-    classified = classify_tweet(tweet[0])
-    # print ("Tweet: ... : Pre-class: %s || Classificado como: %s" % (tweet[1], classified))
+for tweet, testcv in cv:
+    classifier  = NaiveBayesClassifier.train(training_set[tweet[0]:tweet[len(tweet)-1]])
+    accuracy    = nltk.classify.util.accuracy(classifier, training_set[testcv[0]:testcv[len(testcv)-1]])
 
+    totalaccuracy += accuracy
+
+    classified     = classify_tweet(in_tweets[testcv[0]][0])
+    # print 'accuracy:', accuracy
+    # print ("Tweet: ... : Pre-class: %s || Classificado como: %s" % (in_tweets[testcv[0]][1], classified))
     if classified == 'positive':
         test['positive'] += 1
     else:
         test['negative'] += 1
 
-    if tweet[1] == 'positive':
+    if in_tweets[testcv[0]][1] == 'positive':
         test['totpos'] += 1
     else:
         test['totneg'] += 1
 
-    if classified != tweet[1]:
-        accuracy -= 1
-
-print ("\n--------")        
-print('Total accuracy: %f (%d/%d).' % (((accuracy *100) / total), accuracy, len(test_tweets)))
-print('Positives: %d of %d' % (test['positive'], test['totpos']))
-print('Negatives: %d of %d' % (test['negative'], test['totneg']))
+print ("\n--------")
+print ('Cross Validation with: %d folds (%d%%) of %d' % (number_cross, (number_cross * 100) / len(tweet), len(tweet)))
+print ('Total accuracy on CV: %f' % (totalaccuracy / number_cross))
+print ('Positives: %d of %d' % (test['positive'], test['totpos']))
+print ('Negatives: %d of %d' % (test['negative'], test['totneg']))
 print ("\n--------")
 
 print_menu()
